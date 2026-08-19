@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: daily-full
+  group: job-scraper-sweeps
   cancel-in-progress: false
 
 jobs:

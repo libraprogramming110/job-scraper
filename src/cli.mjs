@@ -10,6 +10,7 @@
  *   --limit 25          cap jobs taken per source
  *   --no-descriptions   skip the extra per-job detail requests
  *   --fresh             ignore the seen-cache; treat every job as new
+ *   --digest            also send a run-summary heartbeat to Telegram
  */
 
 import fs from 'node:fs/promises';
@@ -19,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { applyFilters, dedupe, fuzzyKey, rank, scoreJob } from './core.mjs';
 import { loadSeen, saveSeen, splitNew, writeOutputs } from './output.mjs';
 import { runSources, selectSources, ALL_SOURCES } from './sources/index.mjs';
-import { sendTelegram } from './notify.mjs';
+import { sendDigest, sendTelegram } from './notify.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -32,6 +33,7 @@ function parseArgs(argv) {
     else if (a === '--limit') args.limit = Number(argv[++i]);
     else if (a === '--all') args.all = true;
     else if (a === '--fresh') args.fresh = true;
+    else if (a === '--digest') args.digest = true;
     else if (a === '--no-descriptions') args.noDescriptions = true;
   }
   return args;
@@ -135,11 +137,22 @@ async function main() {
 
   // ── Telegram ──────────────────────────────────────────────────────────────
   // A failed delivery must not bury jobs: fresh keys only enter the seen-cache
-  // once they've been successfully notified (or notifications are off entirely).
+  // once they have been successfully notified, or notifications are switched off
+  // in config. "Switched on but no usable token" is a FAILURE, not a third quiet
+  // state — that gap silently buried every new job and still exited 0.
   const telegram = await loadTelegramConfig(ROOT);
-  const notifyOn = config.notify?.enabled !== false && telegram;
-  let notify = { failed: false, detail: 'not configured' };
-  if (notifyOn && fresh.length) {
+  const notifyWanted = config.notify?.enabled !== false;
+  let notify;
+  if (!notifyWanted) {
+    notify = { failed: false, detail: 'notifications disabled in config' };
+  } else if (!telegram) {
+    // Wanted, but unusable. This MUST count as a failure: anything softer lets the
+    // seen-cache swallow every fresh job below, silently and permanently, while the
+    // process still exits 0. Missing token = loud failure, jobs kept for next run.
+    notify = { failed: true, detail: 'telegram.json missing or incomplete' };
+  } else if (!fresh.length) {
+    notify = { failed: false, detail: 'no new jobs' };
+  } else {
     try {
       const r = await sendTelegram(telegram.token, telegram.chatId, fresh, {
         jobsPerMessage: config.notify?.jobsPerMessage ?? 8,
@@ -148,8 +161,24 @@ async function main() {
     } catch (e) {
       notify = { failed: true, detail: e?.message || String(e) };
     }
-  } else if (notifyOn && !fresh.length) {
-    notify = { failed: false, detail: 'no new jobs' };
+  }
+
+  // ── Heartbeat ─────────────────────────────────────────────────────────────
+  // Only on --digest (the daily sweep). Without it, "no new jobs" and "the whole
+  // thing is dead" look identical from the outside — both are silence.
+  let digest = null;
+  if (args.digest && notifyWanted && telegram && !notify.failed) {
+    try {
+      await sendDigest(telegram.token, telegram.chatId, {
+        report,
+        counts: { raw: raw.length, matched: jobs.length, fresh: fresh.length },
+        dropped,
+      });
+      digest = 'sent';
+    } catch (e) {
+      digest = `FAILED — ${e?.message || e}`;
+      process.exitCode = 1;
+    }
   }
 
   const freshKeys = new Set(fresh.map(fuzzyKey));
@@ -174,8 +203,13 @@ async function main() {
   if (filtered.length) console.log(`Filtered out: ${filtered.map(([k, n]) => `${k} ${n}`).join(', ')}`);
   console.log(`New since last run: ${fresh.length}`);
   console.log(`Telegram: ${notify.failed ? 'FAILED — ' + notify.detail : notify.detail}`);
+  if (digest) console.log(`Digest: ${digest}`);
   console.log(`\n  ${path.relative(ROOT, written.mdPath)}   ← skim this`);
   console.log(`  ${path.relative(ROOT, written.jsonPath)} ← full data for tailoring\n`);
+
+  // Loud failure: red X in Actions + an email, instead of a green run that sent
+  // nothing. exitCode (not exit()) so the summary above and saveSeen both finish.
+  if (notify.failed) process.exitCode = 1;
 }
 
 main().catch((e) => {

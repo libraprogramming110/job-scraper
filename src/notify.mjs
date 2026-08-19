@@ -88,3 +88,52 @@ export async function sendTelegram(token, chatId, jobs, { jobsPerMessage = 8 } =
   }
   return { sent };
 }
+
+/**
+ * Send a run-summary heartbeat — sources, counts, failures — even when nothing
+ * new was found. Without this, a healthy quiet run and a dead pipeline are the
+ * same observable event: no message. Throws on failure, like sendTelegram.
+ */
+export async function sendDigest(token, chatId, { report = [], counts = {}, dropped = {} } = {}) {
+  const when = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+  const ok = report.filter((r) => r.status === 'ok');
+  const failed = report.filter((r) => r.status !== 'ok');
+
+  const L = [
+    `<b>📊 Daily sweep — ${esc(when)}</b>`,
+    `${counts.raw ?? 0} scraped → ${counts.matched ?? 0} matched → <b>${counts.fresh ?? 0} new</b>`,
+    '',
+  ];
+
+  if (ok.length) {
+    L.push(
+      esc(ok.map((r) => `${SOURCE_LABELS[r.id] || r.label} ${r.fetched ?? 0}`).join(' · ')),
+      '',
+    );
+  }
+
+  for (const r of failed) {
+    L.push(`⚠️ <b>FAILED</b>: ${esc(SOURCE_LABELS[r.id] || r.label)} — ${esc(r.error || 'unknown error')}`);
+  }
+  if (failed.length) L.push('');
+
+  const bits = Object.entries(dropped)
+    .filter(([, n]) => n > 0)
+    .map(([k, n]) => `${k} ${n}`);
+  if (bits.length) L.push(`<i>Filtered: ${esc(bits.join(', '))}</i>`);
+
+  const res = await fetch(`${API}/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      text: L.join('\n'),
+    }),
+  });
+  if (!res.ok) throw new Error(`Telegram HTTP ${res.status}`);
+  const body = await res.json();
+  if (!body.ok) throw new Error(body.description || 'Telegram digest failed');
+  return { sent: 1 };
+}

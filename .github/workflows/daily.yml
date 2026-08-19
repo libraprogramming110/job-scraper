@@ -34,7 +34,7 @@ jobs:
         run: echo "{\"token\":\"${{ secrets.TELEGRAM_TOKEN }}\",\"chatId\":\"${{ secrets.TELEGRAM_CHAT_ID }}\"}" > telegram.json
 
       - name: Full sweep (all sources)
-        run: node src/cli.mjs --all
+        run: node src/cli.mjs --all --digest
 
       - name: Commit dedup state back
         run: node scripts/sync-seen.mjs

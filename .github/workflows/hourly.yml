@@ -1,8 +1,8 @@
 name: hourly-olj-sweep
 
-# Scheduling is driven by cron-job.org (reliable web cron) calling
-# workflow_dispatch — GitHub's built-in schedule event is best-effort
-# and drops runs at peak times.
+# Scheduling is driven by the job-scraper-trigger Cloudflare Worker (reliable
+# cron) calling workflow_dispatch — GitHub's built-in schedule event is
+# best-effort and drops runs at peak times.
 on:
   workflow_dispatch:
 
@@ -41,4 +41,9 @@ jobs:
           git config user.email "actions@github.com"
           git add data/seen.json
           git diff --cached --quiet || git commit -m "chore: update seen.json"
+          if ! git pull --rebase origin main 2>/dev/null; then
+            git checkout --theirs data/seen.json
+            git add data/seen.json
+            git -c user.name="job-scraper bot" -c user.email="actions@github.com" commit --no-edit
+          fi
           git push

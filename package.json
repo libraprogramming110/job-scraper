@@ -1,0 +1,15 @@
+{
+  "name": "job-scraper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Scrapes WFH job postings from 12 sources and outputs structured JSON + Markdown for resume tailoring.",
+  "scripts": {
+    "start": "node src/cli.mjs",
+    "scrape": "node src/cli.mjs",
+    "probe": "node scripts/probe-sources.mjs"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2"
+  }
+}

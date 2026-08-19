@@ -1,0 +1,73 @@
+{
+  "_comment": "Everything you control lives here. The code knows nothing about specific roles — edit this file, not src/.",
+
+  "searches": [
+    {
+      "label": "exec-assistant",
+      "keywords": ["executive assistant", "executive virtual assistant", "assistant to the ceo", "ceo assistant"],
+      "enabled": true
+    },
+    {
+      "label": "operations-va",
+      "keywords": ["virtual assistant", "operations assistant", "operations va", "ops assistant"],
+      "enabled": true
+    },
+    {
+      "label": "meta-ads",
+      "keywords": ["facebook ads", "meta ads", "paid media", "paid social", "media buyer", "media buying"],
+      "enabled": true
+    },
+    {
+      "label": "automation",
+      "keywords": ["automation", "automation specialist", "ai automation", "process automation", "workflow automation", "zapier", "make.com", "gohighlevel", "n8n"],
+      "enabled": true
+    }
+  ],
+
+  "filters": {
+    "remoteOnly": true,
+    "employmentTypes": ["part time", "part-time"],
+    "excludeKeywords": [],
+    "minSalary": null,
+    "postedWithinDays": 30
+  },
+
+  "sources": {
+    "remoteok": true,
+    "remotive": true,
+    "jobicy": true,
+    "himalayas": true,
+    "arbeitnow": true,
+    "weworkremotely": true,
+    "workingnomads": true,
+    "jobstreet": true,
+    "kalibrr": true,
+    "onlinejobsph": true,
+    "remoterocketship": false,
+    "jobspresso": true
+  },
+
+  "notify": {
+    "enabled": true,
+    "jobsPerMessage": 8
+  },
+
+  "limits": {
+    "perSource": 50,
+    "fetchDescriptions": true,
+    "maxDetailFetches": 40,
+    "requestDelayMs": 300
+  },
+
+  "_hints": {
+    "searches": "Add as many as you like. `keywords` drive both remote-feed filtering and the search box on query sources.",
+    "employmentTypes": "Empty array = any. Put e.g. [\"internship\"] or [\"ojt\"] to narrow. Matched loosely against each posting's type/title.",
+    "remoteOnly": "false lets on-site roles through (mainly affects the PH sources).",
+    "excludeKeywords": "Any job whose title or description contains one of these is dropped.",
+    "minSalary": "Number in USD-ish terms, or null. Jobs with no parseable salary are always kept.",
+    "postedWithinDays": "null = no age limit. Jobs with no date are always kept.",
+    "perSource": "Cap on jobs taken from any single source per run.",
+    "fetchDescriptions": "OnlineJobs.PH needs one extra request per job to get its description. Set false to run faster with thinner data.",
+    "requestDelayMs": "Politeness delay between requests to the same host."
+  }
+}

@@ -1,0 +1,12 @@
+node_modules/
+
+# Scrape results are local state, not source.
+# NOTE: data/seen.json is TRACKED on purpose — it is the cross-run dedup
+# state shared between cloud runs (committed back by the workflows).
+out/
+
+# Your CV / master profile is personal — keep it out of version control.
+data/master-profile.md
+
+# Telegram bot token + chat id — a secret, never commit it.
+telegram.json

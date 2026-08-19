@@ -1,8 +1,9 @@
 name: hourly-olj-sweep
 
+# Scheduling is driven by cron-job.org (reliable web cron) calling
+# workflow_dispatch — GitHub's built-in schedule event is best-effort
+# and drops runs at peak times.
 on:
-  schedule:
-    - cron: "10 * * * *"
   workflow_dispatch:
 
 permissions:

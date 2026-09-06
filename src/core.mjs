@@ -17,31 +17,39 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const RETRY_BASE_MS = 800;
 const MAX_RETRIES = 2;
 
-/** Retryable = network error or a 5xx/429. 4xx (403s etc.) are permanent — never retry. */
-const retryable = (err, res) => Boolean(res && (res.status >= 500 || res.status === 429)) || /fetch failed|network|timeout|abort/i.test(err?.message || '');
+/**
+ * Retryable = network error, or a 5xx/429 carried on the error as `.status`.
+ * 4xx (403s etc.) are permanent — never retry.
+ */
+const retryable = (err) =>
+  Boolean(err?.status && (err.status >= 500 || err.status === 429)) ||
+  /fetch failed|network|timeout|abort/i.test(err?.message || '');
 
 /** GET with a browser UA, a timeout, a per-host delay, and retries on transient errors. Throws on non-2xx. */
-export async function httpGet(url, { delayMs = 300, timeoutMs = 25000, headers = {} } = {}) {
+export async function httpGet(url, { delayMs = 300, timeoutMs = 45000, headers = {} } = {}) {
   const host = new URL(url).host;
   const since = Date.now() - (lastHit.get(host) ?? 0);
   if (since < delayMs) await sleep(delayMs - since);
   lastHit.set(host, Date.now());
 
-  let res;
-  let attempt = 0;
-  for (;;) {
+  for (let attempt = 0; ; attempt++) {
     try {
-      res = await fetch(url, {
+      const res = await fetch(url, {
         headers: { 'User-Agent': UA, Accept: '*/*', 'Accept-Language': 'en-US,en;q=0.9', ...headers },
         redirect: 'follow',
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (res.ok) return res;
-      if (!retryable(null, res)) throw new Error(`HTTP ${res.status}`);
+      // EVERY non-2xx throws, so a retryable status takes the same bounded path as
+      // a network error. Previously a 429/5xx fell out of the try without throwing:
+      // the catch never ran, `attempt` never incremented and no backoff was applied,
+      // so for(;;) re-fetched flat out — measured at 17,000+ requests in 3 seconds.
+      const err = new Error(`HTTP ${res.status}`);
+      err.status = res.status;
+      throw err;
     } catch (e) {
-      if (retryable(e, null) && attempt < MAX_RETRIES) {
-        attempt++;
-        await sleep(RETRY_BASE_MS * 2 ** (attempt - 1));
+      if (retryable(e) && attempt < MAX_RETRIES) {
+        await sleep(RETRY_BASE_MS * 2 ** attempt);
         continue;
       }
       throw e;
@@ -192,8 +200,22 @@ const slug = (s) =>
     .trim()
     .replace(/\s+/g, ' ');
 
+/**
+ * Company strings that identify nothing — every posting from the source carries the
+ * same one, so they cannot participate in a company|title identity.
+ */
+const ANONYMOUS_COMPANY = new Set(['', 'unknown', 'onlinejobs ph employer']);
+
 /** Cross-source identity: the same posting on RemoteOK and WWR collapses to one. */
-export const fuzzyKey = (job) => `${slug(job.company)}|${slug(job.title)}`;
+export const fuzzyKey = (job) => {
+  const company = slug(job.company);
+  // Collapsing on company|title only works when the company is real. OnlineJobs.PH
+  // hides the employer behind a login and stamps every posting with one placeholder,
+  // so distinct jobs sharing a title were silently dropped as duplicates (measured:
+  // 5 of 60 live postings). Fall back to the posting's own stable id.
+  if (ANONYMOUS_COMPANY.has(company)) return `${job.source}|${job.externalId}`;
+  return `${company}|${slug(job.title)}`;
+};
 
 export function dedupe(jobs) {
   const seenExact = new Set();

@@ -62,7 +62,7 @@ function renderChunk(jobs, header) {
 export async function sendTelegram(token, chatId, jobs, { jobsPerMessage = 8 } = {}) {
   if (!jobs.length) return { sent: 0 };
 
-  const when = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+  const when = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' });
   const header = `<b>🆕 ${jobs.length} new job match${jobs.length > 1 ? 'es' : ''} — ${when}</b>`;
   const chunks = [];
   for (let i = 0; i < jobs.length; i += jobsPerMessage) {
@@ -95,7 +95,7 @@ export async function sendTelegram(token, chatId, jobs, { jobsPerMessage = 8 } =
  * same observable event: no message. Throws on failure, like sendTelegram.
  */
 export async function sendDigest(token, chatId, { report = [], counts = {}, dropped = {} } = {}) {
-  const when = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+  const when = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' });
   const ok = report.filter((r) => r.status === 'ok');
   const failed = report.filter((r) => r.status !== 'ok');
 

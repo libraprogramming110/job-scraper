@@ -45,7 +45,7 @@ export function splitNew(jobs, seen) {
 
 function renderMarkdown({ jobs, fresh, report, keywords, filters, dropped }) {
   const L = [];
-  const when = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+  const when = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' });
 
   L.push(`# Job scrape — ${when}`, '');
   L.push(`**Keywords:** ${keywords.length ? keywords.map((k) => `\`${k}\``).join(', ') : '_none (everything)_'}`);

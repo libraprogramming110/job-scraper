@@ -157,7 +157,13 @@ async function main() {
       const r = await sendTelegram(telegram.token, telegram.chatId, fresh, {
         jobsPerMessage: config.notify?.jobsPerMessage ?? 8,
       });
-      notify = { failed: false, detail: `${r.sent} job(s) sent` };
+      notify = r.failed.length
+        ? {
+            failed: true,
+            detail: `${r.sent} sent, ${r.failed.length} not sent — ${r.error}`,
+            unsent: new Set(r.failed.map(fuzzyKey)),
+          }
+        : { failed: false, detail: `${r.sent} job(s) sent` };
     } catch (e) {
       notify = { failed: true, detail: e?.message || String(e) };
     }
@@ -181,7 +187,8 @@ async function main() {
     }
   }
 
-  const freshKeys = new Set(fresh.map(fuzzyKey));
+  // Partial failure: only the jobs that didn't go out stay un-seen.
+  const freshKeys = notify.unsent || new Set(fresh.map(fuzzyKey));
   for (const key of jobs.map(fuzzyKey)) {
     if (!(notify.failed && freshKeys.has(key))) seen.add(key);
   }

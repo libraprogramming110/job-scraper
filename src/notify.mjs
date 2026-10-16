@@ -31,8 +31,29 @@ const esc = (s) =>
 
 const snippet = (job, max = 160) => {
   const text = String(job.description || '').replace(/\s+/g, ' ').trim();
-  return text.length > max ? `${text.slice(0, max)}…` : text;
+  // Slice by code point, not UTF-16 unit — cutting an emoji in half leaves a lone
+  // surrogate, which Telegram rejects (HTTP 400) and blocks the whole message.
+  const chars = Array.from(text);
+  return chars.length > max ? `${chars.slice(0, max).join('')}…` : text;
 };
+
+/** One sendMessage call. Throws with Telegram's own reason on any failure. */
+async function post(token, chatId, text, { preview = false } = {}) {
+  const res = await fetch(`${API}/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      parse_mode: 'HTML',
+      disable_web_page_preview: !preview,
+      text,
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !body.ok) {
+    throw new Error(`Telegram HTTP ${res.status}: ${body.description || 'send failed'}`);
+  }
+}
 
 function renderChunk(jobs, header) {
   const L = [header, ''];
@@ -56,8 +77,9 @@ function renderChunk(jobs, header) {
 }
 
 /**
- * Send the given jobs to a chat. Throws on any failure — the caller decides
- * whether that means "keep them un-seen".
+ * Send the given jobs to a chat. If a combined message fails, its jobs are retried
+ * one per message, so a single bad posting can't block the rest. Returns the jobs
+ * that still failed — the caller keeps those un-seen for the next run.
  */
 export async function sendTelegram(token, chatId, jobs, { jobsPerMessage = 8 } = {}) {
   if (!jobs.length) return { sent: 0 };
@@ -70,23 +92,31 @@ export async function sendTelegram(token, chatId, jobs, { jobsPerMessage = 8 } =
   }
 
   let sent = 0;
+  const failed = [];
+  let error = null;
   for (const chunk of chunks) {
-    const res = await fetch(`${API}/bot${token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        parse_mode: 'HTML',
-        disable_web_page_preview: false,
-        text: renderChunk(chunk, header),
-      }),
-    });
-    if (!res.ok) throw new Error(`Telegram HTTP ${res.status}`);
-    const body = await res.json();
-    if (!body.ok) throw new Error(body.description || 'Telegram send failed');
-    sent += chunk.length;
+    try {
+      await post(token, chatId, renderChunk(chunk, header), { preview: true });
+      sent += chunk.length;
+      continue;
+    } catch (e) {
+      if (chunk.length === 1) {
+        failed.push(chunk[0]);
+        error = e.message;
+        continue;
+      }
+    }
+    for (const job of chunk) {
+      try {
+        await post(token, chatId, renderChunk([job], header), { preview: true });
+        sent += 1;
+      } catch (e) {
+        failed.push(job);
+        error = e.message;
+      }
+    }
   }
-  return { sent };
+  return { sent, failed, error };
 }
 
 /**
@@ -122,18 +152,6 @@ export async function sendDigest(token, chatId, { report = [], counts = {}, drop
     .map(([k, n]) => `${k} ${n}`);
   if (bits.length) L.push(`<i>Filtered: ${esc(bits.join(', '))}</i>`);
 
-  const res = await fetch(`${API}/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      parse_mode: 'HTML',
-      disable_web_page_preview: true,
-      text: L.join('\n'),
-    }),
-  });
-  if (!res.ok) throw new Error(`Telegram HTTP ${res.status}`);
-  const body = await res.json();
-  if (!body.ok) throw new Error(body.description || 'Telegram digest failed');
+  await post(token, chatId, L.join('\n'));
   return { sent: 1 };
 }
